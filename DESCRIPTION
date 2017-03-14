@@ -1,0 +1,19 @@
+Package: golfcoursegeo
+Type: Package
+Title: Converts a KML file into data about a golf course
+Version: 0.1.0
+Authors@R: person("Scott", "Came", email = "scottcame10@gmail.com",
+                  role = c("aut", "cre"))
+Description: Supports extraction of golf course information from a properly-structured KML file.  See README.md for details.
+License: Apache License, Version 2.0
+Encoding: UTF-8
+LazyData: true
+Imports:
+  dplyr,
+  tibble,
+  rgdal,
+  rgeos,
+  sp,
+  purrr,
+  XML
+RoxygenNote: 5.0.1
