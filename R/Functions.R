@@ -1,3 +1,6 @@
+packageEnvironment <- new.env()
+DEBUG <- FALSE
+
 #' Read golf hole info from a KML layer
 #'
 #' Read a Folder structure from a KML file created in accordance with the conventions of this package, and produce
@@ -8,7 +11,8 @@
 #' \item A Placemark with the name 'Tee' placed at the teeing ground.  Optionally, this placemark can have a description to indicate
 #' out-of-bounds on the hole (e.g., OB=left for out-of-bounds on the left)
 #' \item On par 4 and par 5 holes, paths drawn at 200, 250, and 300 yard distances from the tee, with the path being a single line drawn
-#' to the width of the fairway at that point.  These paths should be named '200 width', '250 width', and '300 width', respectively.
+#' to the width of the fairway at that point.  These paths should be named '200 width', '250 width', and '300 width', respectively, and
+#' they must appear in the hole folder in that order.
 #' \item Placemarks to indicate bunkers and water hazards, named 'Bunker' and 'Hazard' respectively
 #' \item A Polygon around the green (putting surface), named 'Green'
 #' }
@@ -22,9 +26,11 @@
 #' @importFrom XML xmlParse getNodeSet
 #' @param layerName the name of the Folder in the KML file to indicate the hole.  Folder name must be "Hole X" where X is 1:18.
 #' @param courseName the name of the golf course (if missing, same as KML file name)
+#' @param elevationCacheFile the path to a file in which to store a cache of elevations, to avoid over-hitting the Google elevation API.  NULL (the default)
+#' indicates not to use a cache.
 #' @return a one-row tibble (data frame) with the information about the specified hole
-extractHoleInfoFromKmlLayer <- function(layerName, kmlFile, courseName=kmlFile) {
-
+extractHoleInfoFromKmlLayer <- function(layerName, kmlFile, courseName=kmlFile, elevationCacheFile=NULL) {
+  
   warnOption <- getOption('warn')
   options(warn = -1)
 
@@ -45,6 +51,7 @@ extractHoleInfoFromKmlLayer <- function(layerName, kmlFile, courseName=kmlFile) 
 
   centerGreenCoordinates <- coordinates(kmlPoly)[1,]
   teeCoordinates <- kmlPoints@coords[teeRowNumber, 1:2]
+  center250Coordinates <- NULL
 
   doglegAngle <- NA
   widths <- as.integer(c(NA, NA, NA))
@@ -59,7 +66,8 @@ extractHoleInfoFromKmlLayer <- function(layerName, kmlFile, courseName=kmlFile) 
     widths <- gLength(kmlLinesP, byid=TRUE) %>% metersToYards()
     midpoints <- gCentroid(kmlLines, byid=TRUE)
     center200Coordinates <- midpoints[1]@coords[1,]
-
+    center250Coordinates <- midpoints[2]@coords[1,]
+    
     doglegSpatialLines <- SpatialLines(
       list(
         Lines(list(Line(rbind(teeCoordinates, center200Coordinates))), ID='1'),
@@ -114,14 +122,27 @@ extractHoleInfoFromKmlLayer <- function(layerName, kmlFile, courseName=kmlFile) 
   greensideHazards <- sum(greenHazardDistance <= 25)
 
   hole <- as.integer(gsub(x=layerName, pattern='Hole ([0-9]+)', replacement='\\1'))
-
+  
+  teeElevation <- getElevationFromGoogle(teeCoordinates, elevationCacheFile) %>% metersToFeet()
+  greenElevation <- getElevationFromGoogle(centerGreenCoordinates, elevationCacheFile) %>% metersToFeet()
+  fairwayElevation <- as.double(NA)
+  
+  if (!is.null(center250Coordinates)) {
+    fairwayElevation <- getElevationFromGoogle(center250Coordinates, elevationCacheFile) %>% metersToFeet()
+  }
+  
   options(warn = warnOption)
 
   tibble(CourseName=courseName, HoleNumber=hole, DoglegAngle=doglegAngle, GreenArea=squareMetersToSquareYards(greenArea), GreenLinearity=greenLinearity,
          Width200=widths[1], Width250=widths[2], Width300=widths[3],
+         TeeElevation=teeElevation, GreenElevation=greenElevation, FairwayElevation=fairwayElevation,
          BunkersInPlayFromTee=bunkersInPlayFromTee, WaterHazardsInPlayFromTee=waterHazardsInPlayFromTee,
          GreensideBunkers=greensideBunkers, GreensideHazards=greensideHazards, OB=ob)
 
+}
+
+metersToFeet <- function(m) {
+  metersToYards(m)*3
 }
 
 metersToYards <- function(m) {
@@ -139,13 +160,73 @@ squareMetersToSquareYards <- function(msq) {
 #' @importFrom rgdal ogrListLayers
 #' @return a tibble with a row for each hole documented in the specified file
 #' @param kmlFiles the KML file documenting the holes on the course (see documentation for extractHoleInfoFromKmlLayer on file conventions)
+#' @param elevationCacheFile the path to a file in which to store a cache of elevations, to avoid over-hitting the Google elevation API
 #' @export
-extractCourseInfoFromKmlFile <- function(kmlFiles) {
+extractCourseInfoFromKmlFile <- function(kmlFiles, elevationCacheFile=NULL) {
   if (is.null(names(kmlFiles))) {
     names(kmlFiles) <- kmlFiles
   }
   map2_df(kmlFiles, names(kmlFiles), function(kmlFile, courseName) {
     layerNames <- as.character(ogrListLayers(dsn=kmlFile))
-    map_df(layerNames, extractHoleInfoFromKmlLayer, kmlFile, courseName)
+    map_df(layerNames, extractHoleInfoFromKmlLayer, kmlFile, courseName, elevationCacheFile)
   })
+}
+
+getElevationAPIURL <- function(lat, long) {
+  URLencode(paste0("https://maps.googleapis.com/maps/api/elevation/json?locations=", lat, ',', long))
+}
+
+#' @importFrom RCurl getURL
+#' @importFrom jsonlite fromJSON
+getElevationFromGoogle <- function(coords, elevationCacheFile) {
+  
+  if (DEBUG) writeLines(paste0('Invoking getElevationFromGoogle, coords=', paste0(coords, collapse=',')))
+  
+  latCoord <- coords[2]
+  longCoord <- coords[1]
+  
+  cache <- NULL
+  if (exists('elevation-cache', envir=packageEnvironment)) {
+    cache <- get('elevation-cache', envir=packageEnvironment)
+  }
+  
+  if (!is.null(elevationCacheFile)) {
+    if (DEBUG) writeLines(paste0('Using elevation cache, file=', elevationCacheFile))
+    if (file.exists(elevationCacheFile)) {
+      if (is.null(cache)) {
+        if (DEBUG) writeLines('Elevation cache not found in package environment, reading from file')
+        cache <- readRDS(elevationCacheFile)
+        assign('elevation-cache', cache, envir=packageEnvironment)
+      } else {
+        if (DEBUG) writeLines('Elevation cache found in package environment')
+      }
+      resultRow <- cache %>% filter(lat==latCoord & long==longCoord)
+      if (nrow(resultRow)) {
+        if (DEBUG) writeLines('Location found in elevation cache, returning without hitting Google API')
+        return(resultRow$elevation)
+      }
+    } else {
+      if (DEBUG) writeLines('No existing elevation cache file found, creating...')
+      cache <- data.frame()
+    }
+  } else {
+    if (DEBUG) writeLines('Not caching elevation data')
+  }
+  
+  u <- getElevationAPIURL(latCoord, longCoord)
+  if (DEBUG) writeLines(paste0('Hitting Google Elevation API, url=', u))
+  doc <- getURL(u)
+  x <- fromJSON(doc)
+  ret <- x$results$elevation
+  
+  if (!is.null(elevationCacheFile)) {
+    resultRow <- data.frame(lat=latCoord, long=longCoord, elevation=ret)
+    cache <- bind_rows(cache, resultRow)
+    if (DEBUG) writeLines(paste0('Updating elevation cache in file ', elevationCacheFile))
+    saveRDS(cache, elevationCacheFile)
+    assign('elevation-cache', cache, envir=packageEnvironment)
+  }
+  
+  ret
+  
 }

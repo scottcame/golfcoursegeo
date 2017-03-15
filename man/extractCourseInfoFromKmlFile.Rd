@@ -4,10 +4,12 @@
 \alias{extractCourseInfoFromKmlFile}
 \title{Read golf course (several holes) info from a KML file}
 \usage{
-extractCourseInfoFromKmlFile(kmlFiles)
+extractCourseInfoFromKmlFile(kmlFiles, elevationCacheFile = NULL)
 }
 \arguments{
 \item{kmlFiles}{the KML file documenting the holes on the course (see documentation for extractHoleInfoFromKmlLayer on file conventions)}
+
+\item{elevationCacheFile}{the path to a file in which to store a cache of elevations, to avoid over-hitting the Google elevation API}
 }
 \value{
 a tibble with a row for each hole documented in the specified file
