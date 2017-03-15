@@ -24,15 +24,20 @@ DEBUG <- FALSE
 #' @importFrom sp CRS spTransform SpatialLines Lines Line SpatialPolygons Polygons Polygon coordinates
 #' @importFrom rgeos gLength gCentroid gDistance gDifference gArea
 #' @importFrom XML xmlParse getNodeSet
+#' @importFrom tools file_path_sans_ext
 #' @param layerName the name of the Folder in the KML file to indicate the hole.  Folder name must be "Hole X" where X is 1:18.
-#' @param courseName the name of the golf course (if missing, same as KML file name)
+#' @param courseName the name of the golf course (if missing, same as KML file name, minus .kml)
 #' @param elevationCacheFile the path to a file in which to store a cache of elevations, to avoid over-hitting the Google elevation API.  NULL (the default)
 #' indicates not to use a cache.
 #' @return a one-row tibble (data frame) with the information about the specified hole
-extractHoleInfoFromKmlLayer <- function(layerName, kmlFile, courseName=kmlFile, elevationCacheFile=NULL) {
+extractHoleInfoFromKmlLayer <- function(layerName, kmlFile, courseName=NULL, elevationCacheFile=NULL) {
   
   warnOption <- getOption('warn')
   options(warn = -1)
+  
+  if (is.null(courseName)) {
+    courseName <- file_path_sans_ext(basename(kmlFile))
+  }
 
   kmlPoints <- readOGR(dsn=kmlFile, layer=layerName, require_geomType = 'wkbPoint', verbose=FALSE)
   kmlPoly <- readOGR(dsn=kmlFile, layer=layerName, require_geomType = 'wkbPolygon', verbose=FALSE)

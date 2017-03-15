@@ -4,13 +4,13 @@
 \alias{extractHoleInfoFromKmlLayer}
 \title{Read golf hole info from a KML layer}
 \usage{
-extractHoleInfoFromKmlLayer(layerName, kmlFile, courseName = kmlFile,
+extractHoleInfoFromKmlLayer(layerName, kmlFile, courseName = NULL,
   elevationCacheFile = NULL)
 }
 \arguments{
 \item{layerName}{the name of the Folder in the KML file to indicate the hole.  Folder name must be "Hole X" where X is 1:18.}
 
-\item{courseName}{the name of the golf course (if missing, same as KML file name)}
+\item{courseName}{the name of the golf course (if missing, same as KML file name, minus .kml)}
 
 \item{elevationCacheFile}{the path to a file in which to store a cache of elevations, to avoid over-hitting the Google elevation API.  NULL (the default)
 indicates not to use a cache.}
