@@ -185,10 +185,7 @@ getElevationFromGoogle <- function(coords, elevationCacheFile) {
   latCoord <- coords[2]
   longCoord <- coords[1]
   
-  cache <- NULL
-  if (exists('elevation-cache', envir=packageEnvironment)) {
-    cache <- get('elevation-cache', envir=packageEnvironment)
-  }
+  cache <- get0('elevation-cache', envir=packageEnvironment)
   
   if (!is.null(elevationCacheFile)) {
     if (DEBUG) writeLines(paste0('Using elevation cache, file=', elevationCacheFile))
