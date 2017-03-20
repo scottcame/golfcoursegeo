@@ -39,6 +39,16 @@ extractHoleInfoFromKmlLayer <- function(layerName, kmlFile, courseName=NULL, ele
     courseName <- file_path_sans_ext(basename(kmlFile))
   }
 
+  xmlDoc <- xmlParse(kmlFile)
+  
+  if (length(getNodeSet(xmlDoc, paste0("//kml:Folder[kml:name='", layerName, "']//kml:Placemark[kml:name='Tee']"), c(kml='http://www.opengis.net/kml/2.2')))==0) {
+    stop(paste0('No Tee placemark defined for ', layerName))
+  }
+  
+  if (length(getNodeSet(xmlDoc, paste0("//kml:Folder[kml:name='", layerName, "']//kml:Placemark[kml:name='Green']"), c(kml='http://www.opengis.net/kml/2.2')))==0) {
+    stop(paste0('No Green polygon defined for ', layerName))
+  }
+  
   kmlPoints <- readOGR(dsn=kmlFile, layer=layerName, require_geomType = 'wkbPoint', verbose=FALSE)
   kmlPoly <- readOGR(dsn=kmlFile, layer=layerName, require_geomType = 'wkbPolygon', verbose=FALSE)
 
@@ -60,18 +70,34 @@ extractHoleInfoFromKmlLayer <- function(layerName, kmlFile, courseName=NULL, ele
 
   doglegAngle <- NA
   widths <- as.integer(c(NA, NA, NA))
+  idx200Width <- 1
+  idx250Width <- 2
+  idx300Width <- 3
   par3Hole <- TRUE
-
-  xmlDoc <- xmlParse(kmlFile)
 
   if (length(getNodeSet(xmlDoc, paste0("//kml:Folder[kml:name='", layerName, "']//kml:LineString"), c(kml='http://www.opengis.net/kml/2.2')))) {
 
     kmlLines <- readOGR(dsn=kmlFile, layer=layerName, require_geomType = 'wkbLineString', verbose=FALSE)
+    
+    df <- kmlLines@data
+    df$id <- rownames(df)
+    
+    stopifnorows <- function(df, dfName) {
+      if(nrow(df)==0) {
+        stop(paste0(dfName, ' is missing...stopping execution'))
+      }
+      df
+    }
+    
+    idx200Width <- df %>% filter(Name=='200 width') %>% stopifnorows('200width line') %>% .$id %>% as.integer() + 1
+    idx250Width <- df %>% filter(Name=='250 width') %>% stopifnorows('250width line') %>% .$id %>% as.integer() + 1
+    idx300Width <- df %>% filter(Name=='300 width') %>% stopifnorows('300width line') %>% .$id %>% as.integer() + 1
+    
     kmlLinesP <- spTransform(kmlLines, aeqd)
     widths <- gLength(kmlLinesP, byid=TRUE) %>% metersToYards()
     midpoints <- gCentroid(kmlLines, byid=TRUE)
-    center200Coordinates <- midpoints[1]@coords[1,]
-    center250Coordinates <- midpoints[2]@coords[1,]
+    center200Coordinates <- midpoints[idx200Width]@coords[1,]
+    center250Coordinates <- midpoints[idx250Width]@coords[1,]
     
     doglegSpatialLines <- SpatialLines(
       list(
@@ -139,7 +165,7 @@ extractHoleInfoFromKmlLayer <- function(layerName, kmlFile, courseName=NULL, ele
   options(warn = warnOption)
 
   tibble(CourseName=courseName, HoleNumber=hole, DoglegAngle=doglegAngle, GreenArea=squareMetersToSquareYards(greenArea), GreenLinearity=greenLinearity,
-         Width200=widths[1], Width250=widths[2], Width300=widths[3],
+         Width200=widths[idx200Width], Width250=widths[idx250Width], Width300=widths[idx300Width],
          TeeElevation=teeElevation, GreenElevation=greenElevation, FairwayElevation=fairwayElevation,
          BunkersInPlayFromTee=bunkersInPlayFromTee, WaterHazardsInPlayFromTee=waterHazardsInPlayFromTee,
          GreensideBunkers=greensideBunkers, GreensideHazards=greensideHazards, OB=ob)

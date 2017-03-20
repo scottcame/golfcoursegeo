@@ -17,3 +17,4 @@ Imports:
   purrr,
   XML
 RoxygenNote: 5.0.1
+Suggests: testthat
