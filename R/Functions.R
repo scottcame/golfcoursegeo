@@ -167,13 +167,10 @@ squareMetersToSquareYards <- function(msq) {
 #' @param kmlFiles the KML file documenting the holes on the course (see documentation for extractHoleInfoFromKmlLayer on file conventions)
 #' @param elevationCacheFile the path to a file in which to store a cache of elevations, to avoid over-hitting the Google elevation API
 #' @export
-extractCourseInfoFromKmlFile <- function(kmlFiles, elevationCacheFile=NULL) {
-  if (is.null(names(kmlFiles))) {
-    names(kmlFiles) <- kmlFiles
-  }
-  map2_df(kmlFiles, names(kmlFiles), function(kmlFile, courseName) {
+extractCourseInfoFromKmlFiles <- function(kmlFiles, elevationCacheFile=NULL) {
+  map_df(kmlFiles, function(kmlFile) {
     layerNames <- as.character(ogrListLayers(dsn=kmlFile))
-    map_df(layerNames, extractHoleInfoFromKmlLayer, kmlFile, courseName, elevationCacheFile)
+    map_df(layerNames, extractHoleInfoFromKmlLayer, kmlFile, courseName=NULL, elevationCacheFile)
   })
 }
 
